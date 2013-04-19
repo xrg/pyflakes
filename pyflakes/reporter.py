@@ -27,6 +27,8 @@ class Reporter(object):
         """
         self._stdout = warningStream
         self._stderr = errorStream
+        self.numWarnings = 0
+        self.numErrors = 0
 
     def unexpectedError(self, filename, msg):
         """
@@ -37,6 +39,7 @@ class Reporter(object):
         @param msg: A message explaining the problem.
         @ptype msg: C{unicode}
         """
+        self.numErrors += 1
         self._stderr.write(u("%s: %s\n") % (filename, msg))
 
     def syntaxError(self, filename, msg, lineno, offset, text):
@@ -54,6 +57,7 @@ class Reporter(object):
         @param text: The source code containing the syntax error.
         @ptype text: C{unicode}
         """
+        self.numErrors += 1
         line = text.splitlines()[-1]
         if offset is not None:
             offset = offset - (len(text) - len(line))
@@ -69,6 +73,19 @@ class Reporter(object):
 
         @param: A L{pyflakes.messages.Message}.
         """
+        self.numWarnings += 1
+        self._stdout.write(u(message))
+        self._stdout.write(u('\n'))
+
+    def flake_error(self, message):
+        """
+        pyflakes found some error in the code.
+        
+        Unlike L{flake()} , this will cause an exit status 3
+
+        @param: A L{pyflakes.messages.Message}.
+        """
+        self.numErrors += 1
         self._stdout.write(u(message))
         self._stdout.write(u('\n'))
 

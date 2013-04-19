@@ -9,9 +9,11 @@ from optparse import OptionParser
 
 from pyflakes import checker, __version__
 from pyflakes import reporter as modReporter
+from pyflakes.messages import UnusedImport, UndefinedExport, UndefinedLocal, UndefinedName
 
 __all__ = ['check', 'checkPath', 'checkRecursive', 'iterSourceCode', 'main']
 
+allowed_undefines = ('_', ) 
 
 def check(codeString, filename, reporter=None):
     """
@@ -51,14 +53,29 @@ def check(codeString, filename, reporter=None):
             reporter.syntaxError(filename, msg, lineno, offset, text)
         return 1
     except Exception:
-        reporter.unexpectedError(filename, 'problem decoding source')
+        value = sys.exc_info()[1]
+        msg = value.args[0]
+        reporter.unexpectedError(filename, 'problem decoding source: %s' % msg)
         return 1
     else:
         # Okay, it's syntactically valid.  Now check it.
         w = checker.Checker(tree, filename)
         w.messages.sort(key=lambda m: m.lineno)
         for warning in w.messages:
-            reporter.flake(warning)
+            # decide on the severity of each message:
+            if filename.endswith('__init__.py') and isinstance(w, UnusedImport):
+                pass
+            elif isinstance(warning, UndefinedName) \
+                        and warning.message_args[0] in allowed_undefines:
+                # Some undefined names may be legal, such as gettext's "_()"
+                reporter.flake(warning)
+            elif isinstance(warning, (UndefinedExport, UndefinedLocal, UndefinedName)):
+                # the code appears to be broken
+                reporter.flake_error(warning)
+            else:
+                # a warning, the code could still work, eventually
+                reporter.flake(warning)
+
         return len(w.messages)
 
 
@@ -129,4 +146,12 @@ def main(prog=None):
         warnings = checkRecursive(args, reporter)
     else:
         warnings = check(sys.stdin.read(), '<stdin>', reporter)
-    raise SystemExit(warnings > 0)
+
+    if reporter.numErrors:
+        raise SystemExit(1)
+    elif reporter.numWarnings:
+        raise SystemExit(3)
+    elif warnings:
+        raise SystemExit(4)
+    else:
+        return
