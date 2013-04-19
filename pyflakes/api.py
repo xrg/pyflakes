@@ -13,7 +13,7 @@ from pyflakes.messages import UnusedImport, UndefinedExport, UndefinedLocal, Und
 
 __all__ = ['check', 'checkPath', 'checkRecursive', 'iterSourceCode', 'main']
 
-allowed_undefines = ('_', ) 
+allowed_undefines = ('_', 'openerp_version' )
 
 def check(codeString, filename, reporter=None):
     """
