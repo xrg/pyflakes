@@ -1,4 +1,4 @@
-
+#!/usr/bin/python
 """
 Implementation of the command-line I{pyflakes} tool.
 """
@@ -6,7 +6,7 @@ Implementation of the command-line I{pyflakes} tool.
 import compiler, sys
 import os
 
-checker = __import__('pyflakes.checker').checker
+from pyflakes import checker
 
 def check(codeString, filename):
     """
@@ -56,7 +56,7 @@ def check(codeString, filename):
             if offset is not None:
                 print >> sys.stderr, " " * offset, "^"
 
-        return 1
+        raise
     else:
         # Okay, it's syntactically valid.  Now parse it into an ast and check
         # it.
@@ -84,16 +84,24 @@ def checkPath(filename):
 def main():
     warnings = 0
     args = sys.argv[1:]
-    if args:
-        for arg in args:
-            if os.path.isdir(arg):
-                for dirpath, dirnames, filenames in os.walk(arg):
-                    for filename in filenames:
-                        if filename.endswith('.py'):
-                            warnings += checkPath(os.path.join(dirpath, filename))
-            else:
-                warnings += checkPath(arg)
-    else:
-        warnings += check(sys.stdin.read(), '<stdin>')
+    try:
+        if args:
+            for arg in args:
+                if os.path.isdir(arg):
+                    for dirpath, dirnames, filenames in os.walk(arg):
+                        for filename in filenames:
+                            if filename.endswith('.py'):
+                                warnings += checkPath(os.path.join(dirpath, filename))
+                else:
+                    warnings += checkPath(arg)
+        else:
+            warnings += check(sys.stdin.read(), '<stdin>')
+    except SyntaxError:
+        raise SystemExit(1)
+    
+    if warnings > 0 :
+        raise SystemExit(3)
 
-    raise SystemExit(warnings > 0)
+    return None
+
+main()
