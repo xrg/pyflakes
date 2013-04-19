@@ -7,7 +7,7 @@ Release:	%mkrel %git_get_rel2
 Summary:        Simple program which checks Python source files for errors
 License:        MIT
 Group:          Development/Python
-URL:            https://launchpad.net/pyflakes
+URL:            http://github.com/pyflakes/pyflakes
 Source:		%git_bs_source %{name}-%{version}.tar.gz
 Source1:	%{name}-gitrpm.version
 Source2:	%{name}-changelog.gitrpm.txt
