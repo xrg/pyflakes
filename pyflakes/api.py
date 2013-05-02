@@ -63,7 +63,7 @@ def check(codeString, filename, reporter=None):
         w.messages.sort(key=lambda m: m.lineno)
         for warning in w.messages:
             # decide on the severity of each message:
-            if filename.endswith('__init__.py') and isinstance(w, UnusedImport):
+            if filename.endswith('__init__.py') and isinstance(warning, UnusedImport):
                 pass
             elif isinstance(warning, UndefinedName) \
                         and warning.message_args[0] in allowed_undefines:
