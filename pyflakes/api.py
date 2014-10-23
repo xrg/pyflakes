@@ -1,11 +1,11 @@
 """
 API for the command-line I{pyflakes} tool.
 """
+from __future__ import with_statement
 
 import sys
 import os
 import _ast
-from optparse import OptionParser
 
 from pyflakes import checker, __version__
 from pyflakes import reporter as modReporter
@@ -57,26 +57,26 @@ def check(codeString, filename, reporter=None):
         msg = value.args[0]
         reporter.unexpectedError(filename, 'problem decoding source: %s' % msg)
         return 1
-    else:
-        # Okay, it's syntactically valid.  Now check it.
-        w = checker.Checker(tree, filename)
-        w.messages.sort(key=lambda m: m.lineno)
-        for warning in w.messages:
-            # decide on the severity of each message:
-            if filename.endswith('__init__.py') and isinstance(warning, UnusedImport):
-                pass
-            elif isinstance(warning, UndefinedName) \
-                        and warning.message_args[0] in allowed_undefines:
-                # Some undefined names may be legal, such as gettext's "_()"
-                reporter.flake(warning)
-            elif isinstance(warning, (UndefinedExport, UndefinedLocal, UndefinedName)):
-                # the code appears to be broken
-                reporter.flake_error(warning)
-            else:
-                # a warning, the code could still work, eventually
-                reporter.flake(warning)
 
-        return len(w.messages)
+    # Okay, it's syntactically valid.  Now check it.
+    w = checker.Checker(tree, filename)
+    w.messages.sort(key=lambda m: m.lineno)
+    for warning in w.messages:
+        # decide on the severity of each message:
+        if filename.endswith('__init__.py') and isinstance(warning, UnusedImport):
+            pass
+        elif isinstance(warning, UndefinedName) \
+                    and warning.message_args[0] in allowed_undefines:
+            # Some undefined names may be legal, such as gettext's "_()"
+            reporter.flake(warning)
+        elif isinstance(warning, (UndefinedExport, UndefinedLocal, UndefinedName)):
+            # the code appears to be broken
+            reporter.flake_error(warning)
+        else:
+            # a warning, the code could still work, eventually
+            reporter.flake(warning)
+
+    return len(w.messages)
 
 
 def checkPath(filename, reporter=None):
@@ -91,17 +91,18 @@ def checkPath(filename, reporter=None):
     if reporter is None:
         reporter = modReporter._makeDefaultReporter()
     try:
-        f = open(filename, 'U')
-        try:
-            return check(f.read() + '\n', filename, reporter)
-        finally:
-            f.close()
+        with open(filename, 'rb') as f:
+            codestr = f.read()
+        if sys.version_info < (2, 7):
+            codestr += '\n'     # Work around for Python <= 2.6
     except UnicodeError:
         reporter.unexpectedError(filename, 'problem decoding source')
+        return 1
     except IOError:
         msg = sys.exc_info()[1]
         reporter.unexpectedError(filename, msg.args[1])
-    return 1
+        return 1
+    return check(codestr, filename, reporter)
 
 
 def iterSourceCode(paths):
@@ -139,8 +140,19 @@ def checkRecursive(paths, reporter):
 
 
 def main(prog=None):
-    parser = OptionParser(prog=prog, version=__version__)
-    __, args = parser.parse_args()
+    """Entry point for the script "pyflakes"."""
+    import optparse
+    import signal
+
+    # Handle "Keyboard Interrupt" and "Broken pipe" gracefully
+    try:
+        signal.signal(signal.SIGINT, lambda sig, f: sys.exit('... stopped'))
+        signal.signal(signal.SIGPIPE, lambda sig, f: sys.exit(1))
+    except ValueError:
+        pass    # SIGPIPE is not supported on Windows
+
+    parser = optparse.OptionParser(prog=prog, version=__version__)
+    (__, args) = parser.parse_args()
     reporter = modReporter._makeDefaultReporter()
     if args:
         warnings = checkRecursive(args, reporter)

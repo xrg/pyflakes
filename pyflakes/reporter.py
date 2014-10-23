@@ -2,11 +2,8 @@
 Provide the Reporter class.
 """
 
+import re
 import sys
-try:
-    u = unicode
-except NameError:
-    u = str
 
 
 class Reporter(object):
@@ -40,7 +37,7 @@ class Reporter(object):
         @ptype msg: C{unicode}
         """
         self.numErrors += 1
-        self._stderr.write(u("%s: %s\n") % (filename, msg))
+        self._stderr.write("%s: %s\n" % (filename, msg))
 
     def syntaxError(self, filename, msg, lineno, offset, text):
         """
@@ -52,7 +49,7 @@ class Reporter(object):
         @ptype msg: C{unicode}
         @param lineno: The line number where the syntax error occurred.
         @ptype lineno: C{int}
-        @param offset: The column on which the syntax error occurred.
+        @param offset: The column on which the syntax error occurred, or None.
         @ptype offset: C{int}
         @param text: The source code containing the syntax error.
         @ptype text: C{unicode}
@@ -61,11 +58,15 @@ class Reporter(object):
         line = text.splitlines()[-1]
         if offset is not None:
             offset = offset - (len(text) - len(line))
-        self._stderr.write(u('%s:%d: %s\n') % (filename, lineno, msg))
-        self._stderr.write(u(line))
-        self._stderr.write(u('\n'))
+            self._stderr.write('%s:%d:%d: %s\n' %
+                               (filename, lineno, offset + 1, msg))
+        else:
+            self._stderr.write('%s:%d: %s\n' % (filename, lineno, msg))
+        self._stderr.write(line)
+        self._stderr.write('\n')
         if offset is not None:
-            self._stderr.write(u(" " * (offset + 1) + "^\n"))
+            self._stderr.write(re.sub(r'\S', ' ', line[:offset]) +
+                               "^\n")
 
     def flake(self, message):
         """
@@ -74,20 +75,20 @@ class Reporter(object):
         @param: A L{pyflakes.messages.Message}.
         """
         self.numWarnings += 1
-        self._stdout.write(u(message))
-        self._stdout.write(u('\n'))
+        self._stdout.write(str(message))
+        self._stdout.write('\n')
 
     def flake_error(self, message):
         """
         pyflakes found some error in the code.
-        
+
         Unlike L{flake()} , this will cause an exit status 3
 
         @param: A L{pyflakes.messages.Message}.
         """
         self.numErrors += 1
-        self._stdout.write(u(message))
-        self._stdout.write(u('\n'))
+        self._stdout.write(str(message))
+        self._stdout.write('\n')
 
 
 def _makeDefaultReporter():

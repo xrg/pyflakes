@@ -13,7 +13,8 @@ class Message(object):
         self.col = getattr(loc, 'col_offset', 0)
 
     def __str__(self):
-        return '%s:%s: %s' % (self.filename, self.lineno, self.message % self.message_args)
+        return '%s:%s: %s' % (self.filename, self.lineno,
+                              self.message % self.message_args)
 
 
 class UnusedImport(Message):
@@ -67,8 +68,10 @@ class UndefinedName(Message):
 class DoctestSyntaxError(Message):
     message = 'syntax error in doctest'
 
-    def __init__(self, filename, loc):
+    def __init__(self, filename, loc, position=None):
         Message.__init__(self, filename, loc)
+        if position:
+            (self.lineno, self.col) = position
         self.message_args = ()
 
 
@@ -81,7 +84,8 @@ class UndefinedExport(Message):
 
 
 class UndefinedLocal(Message):
-    message = "local variable %r (defined in enclosing scope on line %r) referenced before assignment"
+    message = ('local variable %r (defined in enclosing scope on line %r) '
+               'referenced before assignment')
 
     def __init__(self, filename, loc, name, orig_loc):
         Message.__init__(self, filename, loc)
@@ -122,3 +126,10 @@ class UnusedVariable(Message):
     def __init__(self, filename, loc, names):
         Message.__init__(self, filename, loc)
         self.message_args = (names,)
+
+
+class ReturnWithArgsInsideGenerator(Message):
+    """
+    Indicates a return statement with arguments inside a generator.
+    """
+    message = '\'return\' with argument inside generator'

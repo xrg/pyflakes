@@ -3,25 +3,23 @@ Tests for various Pyflakes behavior.
 """
 
 from sys import version_info
-from unittest2 import skip, skipIf
 
 from pyflakes import messages as m
-from pyflakes.test import harness
+from pyflakes.test.harness import TestCase, skip, skipIf
 
 
-class Test(harness.Test):
+class Test(TestCase):
 
     def test_duplicateArgs(self):
         self.flakes('def fu(bar, bar): pass', m.DuplicateArgument)
 
-    @skip("todo: this requires finding all assignments in the function body first")
     def test_localReferencedBeforeAssignment(self):
         self.flakes('''
         a = 1
         def f():
             a; a=1
         f()
-        ''', m.UndefinedName)
+        ''', m.UndefinedLocal, m.UnusedVariable)
 
     def test_redefinedInListComp(self):
         """
@@ -274,7 +272,7 @@ class Test(harness.Test):
         """)
 
     def test_unaryPlus(self):
-        '''Don't die on unary +'''
+        """Don't die on unary +."""
         self.flakes('+1')
 
     def test_undefinedBaseClass(self):
@@ -446,21 +444,27 @@ class Test(harness.Test):
         ''')
 
     def test_varAugmentedAssignment(self):
-        """Augmented assignment of a variable is supported. We don't care about var refs"""
+        """
+        Augmented assignment of a variable is supported.
+        We don't care about var refs.
+        """
         self.flakes('''
         foo = 0
         foo += 1
         ''')
 
     def test_attrAugmentedAssignment(self):
-        """Augmented assignment of attributes is supported. We don't care about attr refs"""
+        """
+        Augmented assignment of attributes is supported.
+        We don't care about attr refs.
+        """
         self.flakes('''
         foo = None
         foo.bar += foo.baz
         ''')
 
 
-class TestUnusedAssignment(harness.Test):
+class TestUnusedAssignment(TestCase):
     """
     Tests for warning about unused assignments.
     """
@@ -549,8 +553,8 @@ class TestUnusedAssignment(harness.Test):
 
     def test_assignInListComprehension(self):
         """
-        Don't warn when a variable in a list comprehension is assigned to but
-        not used.
+        Don't warn when a variable in a list comprehension is
+        assigned to but not used.
         """
         self.flakes('''
         def f():
@@ -559,7 +563,8 @@ class TestUnusedAssignment(harness.Test):
 
     def test_generatorExpression(self):
         """
-        Don't warn when a variable in a generator expression is assigned to but not used.
+        Don't warn when a variable in a generator expression is
+        assigned to but not used.
         """
         self.flakes('''
         def f():
@@ -586,18 +591,40 @@ class TestUnusedAssignment(harness.Test):
         in good Python code, so warning will only create false positives.
         """
         self.flakes('''
+        def f(tup):
+            (x, y) = tup
+        ''')
+        self.flakes('''
         def f():
             (x, y) = 1, 2
+        ''', m.UnusedVariable, m.UnusedVariable)
+        self.flakes('''
+        def f():
+            (x, y) = coords = 1, 2
+            if x > 1:
+                print(coords)
         ''')
+        self.flakes('''
+        def f():
+            (x, y) = coords = 1, 2
+        ''', m.UnusedVariable)
+        self.flakes('''
+        def f():
+            coords = (x, y) = 1, 2
+        ''', m.UnusedVariable)
 
     def test_listUnpacking(self):
         """
         Don't warn when a variable included in list unpacking is unused.
         """
         self.flakes('''
+        def f(tup):
+            [x, y] = tup
+        ''')
+        self.flakes('''
         def f():
             [x, y] = [1, 2]
-        ''')
+        ''', m.UnusedVariable, m.UnusedVariable)
 
     def test_closedOver(self):
         """
@@ -911,3 +938,7 @@ class TestUnusedAssignment(harness.Test):
         def bar():
             yield from foo()
         ''', m.UndefinedName)
+
+    def test_returnOnly(self):
+        """Do not crash on lone "return"."""
+        self.flakes('return 2')

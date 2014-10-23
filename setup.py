@@ -4,7 +4,6 @@
 from __future__ import with_statement
 
 import os.path
-import sys
 
 try:
     from setuptools import setup
@@ -12,14 +11,11 @@ except ImportError:
     from distutils.core import setup
     extra = {'scripts': ["bin/pyflakes"]}
 else:
-    if sys.version_info < (3,):
-        extra = {'tests_require': ['unittest2'],
-                 'test_suite': 'unittest2.collector'}
-    else:
-        extra = {'tests_require': ['unittest2py3k'],
-                 'test_suite': 'unittest2.collector.collector'}
-    extra['entry_points'] = {
-        'console_scripts': ['pyflakes = pyflakes.api:main'],
+    extra = {
+        'test_suite': 'pyflakes.test',
+        'entry_points': {
+            'console_scripts': ['pyflakes = pyflakes.api:main'],
+        },
     }
 
 
