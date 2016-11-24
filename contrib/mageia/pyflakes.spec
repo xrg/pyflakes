@@ -1,7 +1,7 @@
 %define git_repo pyflakes
 %define git_head HEAD
 
-Name:		pyflakes
+Name:		python-pyflakes
 Version:	%git_get_ver
 Release:	%mkrel %git_get_rel2
 Summary:        Simple program which checks Python source files for errors
@@ -11,6 +11,8 @@ URL:            http://github.com/pyflakes/pyflakes
 Source:		%git_bs_source %{name}-%{version}.tar.gz
 Source1:	%{name}-gitrpm.version
 Source2:	%{name}-changelog.gitrpm.txt
+Provides:	pyflakes
+Obsoletes:	pyflakes
 Buildrequires:  python-devel
 BuildArch:      noarch
 
@@ -38,7 +40,7 @@ not perform any checks on style.
 %files
 %defattr(-,root,root)
 %{_bindir}/*
-%{py_puresitedir}/%{name}
+%{py_puresitedir}/pyflakes
 %{py_puresitedir}/*.egg-info
 
 
