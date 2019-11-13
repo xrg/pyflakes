@@ -11,11 +11,12 @@ import sys
 
 from pyflakes import checker, __version__
 from pyflakes import reporter as modReporter
-from pyflakes.messages import UnusedImport, UndefinedExport, UndefinedLocal, UndefinedName
+from pyflakes.messages import UnusedImport, UndefinedExport, \
+                              UndefinedLocal, UndefinedName
 
 __all__ = ['check', 'checkPath', 'checkRecursive', 'iterSourceCode', 'main']
 
-allowed_undefines = ('_', 'openerp_version' )
+allowed_undefines = ('_', 'openerp_version')
 PYTHON_SHEBANG_REGEX = re.compile(br'^#!.*\bpython([23](\.\d+)?|w)?[dmu]?\s')
 
 
@@ -68,10 +69,8 @@ def check(codeString, filename, reporter=None):
         else:
             reporter.syntaxError(filename, msg, lineno, offset, text)
         return 1
-    except Exception:
-        value = sys.exc_info()[1]
-        msg = value.args[0]
-        reporter.unexpectedError(filename, 'problem decoding source: %s' % msg)
+    except Exception as e:
+        reporter.unexpectedError(filename, 'problem decoding source: %s' % e)
         return 1
 
     # Okay, it's syntactically valid.  Now check it.
@@ -83,7 +82,7 @@ def check(codeString, filename, reporter=None):
         if filename.endswith('__init__.py') and isinstance(warning, UnusedImport):
             pass
         elif isinstance(warning, UndefinedName) \
-                    and warning.message_args[0] in allowed_undefines:
+                and warning.message_args[0] in allowed_undefines:
             # Some undefined names may be legal, such as gettext's "_()"
             reporter.flake(warning)
         elif isinstance(warning, (UndefinedExport, UndefinedLocal, UndefinedName)):
@@ -232,4 +231,4 @@ def main(prog=None, args=None):
     elif warnings:
         raise SystemExit(4)
     else:
-        return
+        raise SystemExit(0)

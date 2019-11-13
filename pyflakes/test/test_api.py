@@ -572,7 +572,8 @@ foo(bar=baz, bax)
         # ValueError: invalid \x escape
         with self.makeTempFile(r"foo = '\xyz'") as sourcePath:
             if ver < (3,):
-                decoding_error = "%s: problem decoding source\n" % (sourcePath,)
+                decoding_error = "%s: problem decoding source: " \
+                                 "invalid \\x escape\n" % (sourcePath,)
             else:
                 position_end = 1
                 if PYPY:
@@ -680,9 +681,13 @@ x = "\xe2\x98\x83"
 # coding: ascii
 x = "%s"
 """ % SNOWMAN).encode('utf-16')
+        if sys.version_info >= (3,):
+            error = "source code string cannot contain null bytes"
+        else:
+            error = "compile() expected string without null bytes"
         with self.makeTempFile(source) as sourcePath:
             self.assertHasErrors(
-                sourcePath, ["%s: problem decoding source\n" % (sourcePath,)])
+                sourcePath, ["%s: problem decoding source: %s\n" % (sourcePath, error)])
 
     def test_checkRecursive(self):
         """
@@ -782,7 +787,7 @@ class IntegrationTests(TestCase):
             fd.write("import contraband\n".encode('ascii'))
         d = self.runPyflakes([self.tempfilepath])
         expected = UnusedImport(self.tempfilepath, Node(1), 'contraband')
-        self.assertEqual(d, ("%s%s" % (expected, self.LINESEP), '', 1))
+        self.assertEqual(d, ("%s%s" % (expected, self.LINESEP), '', 3))
 
     def test_errors_io(self):
         """
@@ -814,7 +819,7 @@ class IntegrationTests(TestCase):
         """
         d = self.runPyflakes([], stdin='import contraband')
         expected = UnusedImport('<stdin>', Node(1), 'contraband')
-        self.assertEqual(d, ("%s%s" % (expected, self.LINESEP), '', 1))
+        self.assertEqual(d, ("%s%s" % (expected, self.LINESEP), '', 3))
 
 
 class TestMain(IntegrationTests):
@@ -828,8 +833,7 @@ class TestMain(IntegrationTests):
             with SysStreamCapturing(stdin) as capture:
                 main(args=paths)
         except SystemExit as e:
-            self.assertIsInstance(e.code, bool)
-            rv = int(e.code)
-            return (capture.output, capture.error, rv)
+            self.assertIsInstance(e.code, int)
+            return (capture.output, capture.error, e.code)
         else:
             raise RuntimeError('SystemExit not raised')
