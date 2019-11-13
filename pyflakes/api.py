@@ -3,9 +3,11 @@ API for the command-line I{pyflakes} tool.
 """
 from __future__ import with_statement
 
-import sys
+import ast
 import os
-import _ast
+import platform
+import re
+import sys
 
 from pyflakes import checker, __version__
 from pyflakes import reporter as modReporter
@@ -14,6 +16,8 @@ from pyflakes.messages import UnusedImport, UndefinedExport, UndefinedLocal, Und
 __all__ = ['check', 'checkPath', 'checkRecursive', 'iterSourceCode', 'main']
 
 allowed_undefines = ('_', 'openerp_version' )
+PYTHON_SHEBANG_REGEX = re.compile(br'^#!.*\bpython([23](\.\d+)?|w)?[dmu]?\s')
+
 
 def check(codeString, filename, reporter=None):
     """
@@ -36,7 +40,7 @@ def check(codeString, filename, reporter=None):
         reporter = modReporter._makeDefaultReporter()
     # First, compile into an AST and handle syntax errors.
     try:
-        tree = compile(codeString, filename, "exec", _ast.PyCF_ONLY_AST)
+        tree = ast.parse(codeString, filename=filename)
     except SyntaxError:
         value = sys.exc_info()[1]
         msg = value.args[0]
@@ -71,7 +75,8 @@ def check(codeString, filename, reporter=None):
         return 1
 
     # Okay, it's syntactically valid.  Now check it.
-    w = checker.Checker(tree, filename)
+    file_tokens = checker.make_tokens(codeString)
+    w = checker.Checker(tree, file_tokens=file_tokens, filename=filename)
     w.messages.sort(key=lambda m: m.lineno)
     for warning in w.messages:
         # decide on the severity of each message:
@@ -103,27 +108,35 @@ def checkPath(filename, reporter=None):
     if reporter is None:
         reporter = modReporter._makeDefaultReporter()
     try:
-        # in Python 2.6, compile() will choke on \r\n line endings. In later
-        # versions of python it's smarter, and we want binary mode to give
-        # compile() the best opportunity to do the right thing WRT text
-        # encodings.
-        if sys.version_info < (2, 7):
-            mode = 'rU'
-        else:
-            mode = 'rb'
-
-        with open(filename, mode) as f:
+        with open(filename, 'rb') as f:
             codestr = f.read()
-        if sys.version_info < (2, 7):
-            codestr += '\n'     # Work around for Python <= 2.6
-    except UnicodeError:
-        reporter.unexpectedError(filename, 'problem decoding source')
-        return 1
     except IOError:
         msg = sys.exc_info()[1]
         reporter.unexpectedError(filename, msg.args[1])
         return 1
     return check(codestr, filename, reporter)
+
+
+def isPythonFile(filename):
+    """Return True if filename points to a Python file."""
+    if filename.endswith('.py'):
+        return True
+
+    # Avoid obvious Emacs backup files
+    if filename.endswith("~"):
+        return False
+
+    max_bytes = 128
+
+    try:
+        with open(filename, 'rb') as f:
+            text = f.read(max_bytes)
+            if not text:
+                return False
+    except IOError:
+        return False
+
+    return PYTHON_SHEBANG_REGEX.match(text)
 
 
 def iterSourceCode(paths):
@@ -138,8 +151,9 @@ def iterSourceCode(paths):
         if os.path.isdir(path):
             for dirpath, dirnames, filenames in os.walk(path):
                 for filename in filenames:
-                    if filename.endswith('.py'):
-                        yield os.path.join(dirpath, filename)
+                    full_path = os.path.join(dirpath, filename)
+                    if isPythonFile(full_path):
+                        yield full_path
         else:
             yield path
 
@@ -187,6 +201,14 @@ def _exitOnSignal(sigName, message):
         pass
 
 
+def _get_version():
+    """
+    Retrieve and format package version along with python version & OS used
+    """
+    return ('%s Python %s on %s' %
+            (__version__, platform.python_version(), platform.system()))
+
+
 def main(prog=None, args=None):
     """Entry point for the script "pyflakes"."""
     import optparse
@@ -195,7 +217,7 @@ def main(prog=None, args=None):
     _exitOnSignal('SIGINT', '... stopped')
     _exitOnSignal('SIGPIPE', 1)
 
-    parser = optparse.OptionParser(prog=prog, version=__version__)
+    parser = optparse.OptionParser(prog=prog, version=_get_version())
     (__, args) = parser.parse_args(args=args)
     reporter = modReporter._makeDefaultReporter()
     if args:
