@@ -233,9 +233,16 @@ class TooManyExpressionsInStarredAssignment(Message):
     message = 'too many expressions in star-unpacking assignment'
 
 
+class IfTuple(Message):
+    """
+    Conditional test is a non-empty tuple literal, which are always True.
+    """
+    message = '\'if tuple literal\' is always true, perhaps remove accidental comma?'
+
+
 class AssertTuple(Message):
     """
-    Assertion test is a tuple, which are always True.
+    Assertion test is a non-empty tuple literal, which are always True.
     """
     message = 'assertion is always true, perhaps remove parentheses?'
 
@@ -265,7 +272,7 @@ class InvalidPrintSyntax(Message):
 
 
 class IsLiteral(Message):
-    message = 'use ==/!= to compare str, bytes, and int literals'
+    message = 'use ==/!= to compare constant literals (str, bytes, int, float, tuple)'
 
 
 class FStringMissingPlaceholders(Message):

@@ -42,6 +42,7 @@ class TestTypeAnnotations(TestCase):
     def test_typingExtensionsOverload(self):
         """Allow intentional redefinitions via @typing_extensions.overload"""
         self.flakes("""
+        import typing_extensions
         from typing_extensions import overload
 
         @overload
@@ -53,6 +54,17 @@ class TestTypeAnnotations(TestCase):
             pass
 
         def f(s):
+            return s
+
+        @typing_extensions.overload
+        def g(s):  # type: (None) -> None
+            pass
+
+        @typing_extensions.overload
+        def g(s):  # type: (int) -> int
+            pass
+
+        def g(s):
             return s
         """)
 
@@ -251,6 +263,14 @@ class TestTypeAnnotations(TestCase):
         class A: pass
         ''')
         self.flakes('''
+        T: object
+        def f(t: T): pass
+        ''', m.UndefinedName)
+        self.flakes('''
+        T: object
+        def g(t: 'T'): pass
+        ''')
+        self.flakes('''
         a: 'A B'
         ''', m.ForwardAnnotationSyntaxError)
         self.flakes('''
@@ -262,6 +282,26 @@ class TestTypeAnnotations(TestCase):
         self.flakes('''
         a: 'a: "A"'
         ''', m.ForwardAnnotationSyntaxError)
+
+    @skipIf(version_info < (3, 6), 'new in Python 3.6')
+    def test_unused_annotation(self):
+        # Unused annotations are fine in module and class scope
+        self.flakes('''
+        x: int
+        class Cls:
+            y: int
+        ''')
+        # TODO: this should print a UnusedVariable message
+        self.flakes('''
+        def f():
+            x: int
+        ''')
+        # This should only print one UnusedVariable message
+        self.flakes('''
+        def f():
+            x: int
+            x = 3
+        ''', m.UnusedVariable)
 
     @skipIf(version_info < (3, 5), 'new in Python 3.5')
     def test_annotated_async_def(self):
@@ -287,6 +327,13 @@ class TestTypeAnnotations(TestCase):
             b: Undefined
         class B: pass
         ''', m.UndefinedName)
+
+        self.flakes('''
+        from __future__ import annotations
+        T: object
+        def f(t: T): pass
+        def g(t: 'T'): pass
+        ''')
 
     def test_typeCommentsMarkImportsAsUsed(self):
         self.flakes("""
@@ -418,3 +465,205 @@ class TestTypeAnnotations(TestCase):
                 Y = 2
                 return Y
         """, m.UndefinedName)
+
+    @skipIf(version_info < (3, 8), 'new in Python 3.8')
+    def test_positional_only_argument_annotations(self):
+        self.flakes("""
+        from x import C
+
+        def f(c: C, /): ...
+        """)
+
+    @skipIf(version_info < (3,), 'new in Python 3')
+    def test_partially_quoted_type_annotation(self):
+        self.flakes("""
+        from queue import Queue
+        from typing import Optional
+
+        def f() -> Optional['Queue[str]']:
+            return None
+        """)
+
+    def test_partially_quoted_type_assignment(self):
+        self.flakes("""
+        from queue import Queue
+        from typing import Optional
+
+        MaybeQueue = Optional['Queue[str]']
+        """)
+
+    def test_nested_partially_quoted_type_assignment(self):
+        self.flakes("""
+        from queue import Queue
+        from typing import Callable
+
+        Func = Callable[['Queue[str]'], None]
+        """)
+
+    def test_quoted_type_cast(self):
+        self.flakes("""
+        from typing import cast, Optional
+
+        maybe_int = cast('Optional[int]', 42)
+        """)
+
+    def test_type_cast_literal_str_to_str(self):
+        # Checks that our handling of quoted type annotations in the first
+        # argument to `cast` doesn't cause issues when (only) the _second_
+        # argument is a literal str which looks a bit like a type annoation.
+        self.flakes("""
+        from typing import cast
+
+        a_string = cast(str, 'Optional[int]')
+        """)
+
+    def test_quoted_type_cast_renamed_import(self):
+        self.flakes("""
+        from typing import cast as tsac, Optional as Maybe
+
+        maybe_int = tsac('Maybe[int]', 42)
+        """)
+
+    @skipIf(version_info < (3,), 'new in Python 3')
+    def test_literal_type_typing(self):
+        self.flakes("""
+        from typing import Literal
+
+        def f(x: Literal['some string']) -> None:
+            return None
+        """)
+
+    @skipIf(version_info < (3,), 'new in Python 3')
+    def test_literal_type_typing_extensions(self):
+        self.flakes("""
+        from typing_extensions import Literal
+
+        def f(x: Literal['some string']) -> None:
+            return None
+        """)
+
+    @skipIf(version_info < (3,), 'new in Python 3')
+    def test_annotated_type_typing_missing_forward_type(self):
+        self.flakes("""
+        from typing import Annotated
+
+        def f(x: Annotated['integer']) -> None:
+            return None
+        """, m.UndefinedName)
+
+    @skipIf(version_info < (3,), 'new in Python 3')
+    def test_annotated_type_typing_missing_forward_type_multiple_args(self):
+        self.flakes("""
+        from typing import Annotated
+
+        def f(x: Annotated['integer', 1]) -> None:
+            return None
+        """, m.UndefinedName)
+
+    @skipIf(version_info < (3,), 'new in Python 3')
+    def test_annotated_type_typing_with_string_args(self):
+        self.flakes("""
+        from typing import Annotated
+
+        def f(x: Annotated[int, '> 0']) -> None:
+            return None
+        """)
+
+    @skipIf(version_info < (3,), 'new in Python 3')
+    def test_annotated_type_typing_with_string_args_in_union(self):
+        self.flakes("""
+        from typing import Annotated, Union
+
+        def f(x: Union[Annotated['int', '>0'], 'integer']) -> None:
+            return None
+        """, m.UndefinedName)
+
+    @skipIf(version_info < (3,), 'new in Python 3')
+    def test_literal_type_some_other_module(self):
+        """err on the side of false-negatives for types named Literal"""
+        self.flakes("""
+        from my_module import compat
+        from my_module.compat import Literal
+
+        def f(x: compat.Literal['some string']) -> None:
+            return None
+        def g(x: Literal['some string']) -> None:
+            return None
+        """)
+
+    @skipIf(version_info < (3,), 'new in Python 3')
+    def test_literal_union_type_typing(self):
+        self.flakes("""
+        from typing import Literal
+
+        def f(x: Literal['some string', 'foo bar']) -> None:
+            return None
+        """)
+
+    @skipIf(version_info < (3,), 'new in Python 3')
+    def test_deferred_twice_annotation(self):
+        self.flakes("""
+            from queue import Queue
+            from typing import Optional
+
+
+            def f() -> "Optional['Queue[str]']":
+                return None
+        """)
+
+    @skipIf(version_info < (3, 7), 'new in Python 3.7')
+    def test_partial_string_annotations_with_future_annotations(self):
+        self.flakes("""
+            from __future__ import annotations
+
+            from queue import Queue
+            from typing import Optional
+
+
+            def f() -> Optional['Queue[str]']:
+                return None
+        """)
+
+    def test_idomiatic_typing_guards(self):
+        # typing.TYPE_CHECKING: python3.5.3+
+        self.flakes("""
+            from typing import TYPE_CHECKING
+
+            if TYPE_CHECKING:
+                from t import T
+
+            def f():  # type: () -> T
+                pass
+        """)
+        # False: the old, more-compatible approach
+        self.flakes("""
+            if False:
+                from t import T
+
+            def f():  # type: () -> T
+                pass
+        """)
+        # some choose to assign a constant and do it that way
+        self.flakes("""
+            MYPY = False
+
+            if MYPY:
+                from t import T
+
+            def f():  # type: () -> T
+                pass
+        """)
+
+    def test_typing_guard_for_protocol(self):
+        self.flakes("""
+            from typing import TYPE_CHECKING
+
+            if TYPE_CHECKING:
+                from typing import Protocol
+            else:
+                Protocol = object
+
+            class C(Protocol):
+                def f():  # type: () -> int
+                    pass
+        """)
