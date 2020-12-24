@@ -263,6 +263,14 @@ class CommentAnnotationSyntaxError(Message):
         self.message_args = (annotation,)
 
 
+class OnlyAnnotationImport(Message):
+    message = '%r only used in annotations, at :%r'
+
+    def __init__(self, filename, loc, name, orig_loc):
+        Message.__init__(self, filename, loc)
+        self.message_args = (name, orig_loc.lineno)
+
+
 class RaiseNotImplemented(Message):
     message = "'raise NotImplemented' should be 'raise NotImplementedError'"
 

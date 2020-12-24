@@ -662,6 +662,14 @@ class DoctestScope(ModuleScope):
     """Scope for a doctest."""
 
 
+class AnnotationScope(Scope):
+    """Scope for annotations"""
+
+
+class StringAnnotationScope(AnnotationScope):
+    pass
+
+
 class DummyNode(object):
     """Used in place of an `ast.AST` to set error message positions"""
     def __init__(self, lineno, col_offset):
@@ -757,24 +765,10 @@ def is_typing_overload(value, scope_stack):
     )
 
 
-class AnnotationState:
-    NONE = 0
-    STRING = 1
-    BARE = 2
-
-
-def in_annotation(func):
-    @functools.wraps(func)
-    def in_annotation_func(self, *args, **kwargs):
-        with self._enter_annotation():
-            return func(self, *args, **kwargs)
-    return in_annotation_func
-
-
 def in_string_annotation(func):
     @functools.wraps(func)
     def in_annotation_func(self, *args, **kwargs):
-        with self._enter_annotation(AnnotationState.STRING):
+        with self._enter_annotation(StringAnnotationScope):
             return func(self, *args, **kwargs)
     return in_annotation_func
 
@@ -865,7 +859,6 @@ class Checker(object):
     nodeDepth = 0
     offset = None
     traceTree = False
-    _in_annotation = AnnotationState.NONE
     _in_deferred = False
 
     builtIns = set(builtin_vars).union(_MAGIC_GLOBALS)
@@ -1009,7 +1002,7 @@ class Checker(object):
                     from_list = []
                     for binding in scope.values():
                         if isinstance(binding, StarImportation):
-                            binding.used = all_binding
+                            binding.used = (scope, all_binding.source)
                             from_list.append(binding.fullName)
                     # report * usage, with a list of possible sources
                     from_list = ', '.join(sorted(from_list))
@@ -1020,14 +1013,28 @@ class Checker(object):
             # Look for imported names that aren't used.
             for value in scope.values():
                 if isinstance(value, Importation):
-                    used = value.used or value.name in all_names
-                    if not used:
+                    if value.name in all_names:
+                        # name is exported
+                        pass
+                    elif value.used \
+                            and isinstance(value.used[0], AnnotationScope) \
+                            and scope._annotations_future_enabled:
+
+                        parent_stmt = self.getParent(value.source)
+                        if isinstance(parent_stmt, ast.Module):
+                            messg = messages.OnlyAnnotationImport
+                            self.report(messg, value.source, str(value),
+                                        value.used[1])
+                    elif value.used:
+                        pass
+                    else:
                         messg = messages.UnusedImport
                         self.report(messg, value.source, str(value))
+
                     for node in value.redefined:
                         if isinstance(self.getParent(node), FOR_TYPES):
                             messg = messages.ImportShadowedByLoopVar
-                        elif used:
+                        elif value.used or value.name in all_names:
                             continue
                         else:
                             messg = messages.RedefinedWhileUnused
@@ -1172,12 +1179,17 @@ class Checker(object):
 
         in_generators = None
         importStarred = None
+        in_annotation = isinstance(self.scope, AnnotationScope)
 
         # try enclosing function scopes and global scope
         for scope in self.scopeStack[-1::-1]:
+
             if isinstance(scope, ClassScope):
                 if not PY2 and name == '__class__':
                     return
+                elif in_annotation:
+                    # resolve annotations against class scope
+                    pass
                 elif in_generators is False:
                     # only generators used in a class scope can access the
                     # names of the class. this is skipped during the first
@@ -1194,23 +1206,24 @@ class Checker(object):
                         isinstance(parent.op, ast.RShift)):
                     self.report(messages.InvalidPrintSyntax, node)
 
-            try:
-                scope[name].used = (self.scope, node)
+            if binding:
+                # prefer non-annotation usages
+                if not (binding.used and in_annotation):
+                    binding.used = (self.scope, node)
 
                 # if the name of SubImportation is same as
                 # alias of other Importation and the alias
                 # is used, SubImportation also should be marked as used.
-                n = scope[name]
-                if isinstance(n, Importation) and n._has_alias():
+                if isinstance(binding, Importation) and binding._has_alias():
                     try:
-                        scope[n.fullName].used = (self.scope, node)
+                        fullb = scope[binding.fullName]
+                        if not (fullb.used and in_annotation):
+                            fullb.used = (self.scope, node)
                     except KeyError:
                         pass
-            except KeyError:
-                pass
-            else:
-                return
+                return   # name is resolved
 
+            # name is not resolved, try more...
             importStarred = importStarred or scope.importStarred
 
             if in_generators is not False:
@@ -1308,18 +1321,18 @@ class Checker(object):
                 self.report(messages.UndefinedName, node, name)
 
     @contextlib.contextmanager
-    def _enter_annotation(self, ann_type=AnnotationState.BARE):
-        orig, self._in_annotation = self._in_annotation, ann_type
+    def _enter_annotation(self, scope_cls=AnnotationScope):
+        self.pushScope(scope_cls)
         try:
             yield
         finally:
-            self._in_annotation = orig
+            self.scopeStack.pop()  # don't put in dead scopes
 
     @property
     def _in_postponed_annotation(self):
         return (
-            self._in_annotation == AnnotationState.STRING or
-            self.annotationsFutureEnabled
+            isinstance(self.scope, StringAnnotationScope)
+            or self.annotationsFutureEnabled
         )
 
     def _handle_type_comments(self, node):
@@ -1451,6 +1464,7 @@ class Checker(object):
 
     @in_string_annotation
     def handleStringAnnotation(self, s, node, ref_lineno, ref_col_offset, err):
+        """Handle string as annotation"""
         try:
             tree = ast.parse(s)
         except SyntaxError:
@@ -1473,7 +1487,6 @@ class Checker(object):
 
         self.handleNode(parsed_annotation, node)
 
-    @in_annotation
     def handleAnnotation(self, annotation, node):
         if isinstance(annotation, ast.Str):
             # Defer handling forward annotation.
@@ -1486,10 +1499,13 @@ class Checker(object):
                 messages.ForwardAnnotationSyntaxError,
             ))
         elif self.annotationsFutureEnabled:
-            fn = in_annotation(Checker.handleNode)
-            self.deferFunction(lambda: fn(self, annotation, node))
+            def handleNode():
+                with self._enter_annotation():
+                    self.handleNode(annotation, node)
+            self.deferFunction(handleNode)
         else:
-            self.handleNode(annotation, node)
+            with self._enter_annotation():
+                self.handleNode(annotation, node)
 
     def ignore(self, node):
         pass
@@ -1508,7 +1524,7 @@ class Checker(object):
 
     def SUBSCRIPT(self, node):
         if _is_name_or_attr(node.value, 'Literal'):
-            with self._enter_annotation(AnnotationState.NONE):
+            with self._enter_annotation(Scope):
                 self.handleChildren(node)
         elif _is_name_or_attr(node.value, 'Annotated'):
             self.handleNode(node.value, node)
@@ -1532,7 +1548,7 @@ class Checker(object):
                 # the first argument is the type
                 self.handleNode(slice_tuple.elts[0], node)
                 # the rest of the arguments are not
-                with self._enter_annotation(AnnotationState.NONE):
+                with self._enter_annotation(Scope):
                     for arg in slice_tuple.elts[1:]:
                         self.handleNode(arg, node)
 
@@ -1677,7 +1693,7 @@ class Checker(object):
             len(node.args) >= 1 and
             isinstance(node.args[0], ast.Str)
         ):
-            with self._enter_annotation(AnnotationState.STRING):
+            with self._enter_annotation(StringAnnotationScope):
                 self.handleNode(node.args[0], node)
 
         self.handleChildren(node)
@@ -1794,7 +1810,7 @@ class Checker(object):
         self.handleChildren(node)
 
     def STR(self, node):
-        if self._in_annotation:
+        if isinstance(self.scope, AnnotationScope):
             fn = functools.partial(
                 self.handleStringAnnotation,
                 node.s,

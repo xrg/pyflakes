@@ -622,7 +622,7 @@ class TestTypeAnnotations(TestCase):
 
             def f() -> Optional['Queue[str]']:
                 return None
-        """)
+        """, m.OnlyAnnotationImport, m.OnlyAnnotationImport)
 
     def test_idomiatic_typing_guards(self):
         # typing.TYPE_CHECKING: python3.5.3+
