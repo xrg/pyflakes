@@ -613,6 +613,10 @@ class TestTypeAnnotations(TestCase):
 
     @skipIf(version_info < (3, 7), 'new in Python 3.7')
     def test_partial_string_annotations_with_future_annotations(self):
+        """Queue will be flagged because it's only used in annotations
+
+            but `Optional` will not be, it's from typing
+        """
         self.flakes("""
             from __future__ import annotations
 
@@ -622,7 +626,37 @@ class TestTypeAnnotations(TestCase):
 
             def f() -> Optional['Queue[str]']:
                 return None
-        """, m.OnlyAnnotationImport, m.OnlyAnnotationImport)
+        """, m.OnlyAnnotationImport)
+
+    @skipIf(version_info < (3, 7), 'new in Python 3.7')
+    def test_used_annotations_with_future_annotations(self):
+        """Queue is used, Optional from typing. Hence pass"""
+        self.flakes("""
+            from __future__ import annotations
+
+            from queue import Queue
+            from typing import Optional
+
+
+            def f() -> Optional[Queue[str]]:
+                return Queue()
+        """)
+
+    @skipIf(version_info < (3, 7), 'new in Python 3.7')
+    def test_mixed_annotations_with_future_annotations(self):
+        """Queue is only annotated, but PriorityQueue is used, from the
+        same statement
+        """
+        self.flakes("""
+            from __future__ import annotations
+
+            from queue import Queue, PriorityQueue
+            from typing import Optional
+
+
+            def f() -> Optional[Queue[str]]:
+                return PriorityQueue()
+        """)
 
     def test_idomiatic_typing_guards(self):
         # typing.TYPE_CHECKING: python3.5.3+

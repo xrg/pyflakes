@@ -1011,20 +1011,23 @@ class Checker(object):
                                     scope['__all__'].source, name, from_list)
 
             # Look for imported names that aren't used.
+            used_imports = set()
+            typing_only = []  # importations only used in typing
+
             for value in scope.values():
                 if isinstance(value, Importation):
                     if value.name in all_names:
                         # name is exported
                         pass
                     elif value.used \
-                            and isinstance(value.used[0], AnnotationScope) \
-                            and scope._annotations_future_enabled:
-
-                        parent_stmt = self.getParent(value.source)
-                        if isinstance(parent_stmt, ast.Module):
-                            messg = messages.OnlyAnnotationImport
-                            self.report(messg, value.source, str(value),
-                                        value.used[1])
+                            and getattr(scope, '_annotations_future_enabled',
+                                        False):
+                        # see which imports are really used vs. typing
+                        if isinstance(value.used[0], AnnotationScope):
+                            typing_only.append(value)
+                        else:
+                            # the import /statement/ has at least one use
+                            used_imports.add(value.source)
                     elif value.used:
                         pass
                     else:
@@ -1039,6 +1042,21 @@ class Checker(object):
                         else:
                             messg = messages.RedefinedWhileUnused
                         self.report(messg, node, value.name, value.source)
+
+            for value in typing_only:
+                if value.source in used_imports:
+                    # sibling names of this import have a use
+                    continue
+
+                if getattr(value.source, 'module', None) == 'typing':
+                    # exclude names from `typing` , because conditional
+                    # imports would use that anyway
+                    continue
+
+                parent_stmt = self.getParent(value.source)
+                if isinstance(parent_stmt, ast.Module):
+                    messg = messages.OnlyAnnotationImport
+                    self.report(messg, value.source, str(value), value.used[1])
 
     def pushScope(self, scopeClass=FunctionScope):
         self.scopeStack.append(scopeClass())
